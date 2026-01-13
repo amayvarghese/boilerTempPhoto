@@ -15,7 +15,9 @@ function Scene({
   capturedPoints, 
   onCapture, 
   videoRef,
-  setCameraForward 
+  setCameraForward,
+  setReticleState,
+  setDeviceOrientation
 }) {
   const reticleRef = useRef()
   const stabilityTimerRef = useRef(null)
@@ -29,6 +31,14 @@ function Scene({
     const cameraForward = new Vector3(0, 0, -1)
     cameraForward.applyQuaternion(camera.quaternion)
     setCameraForward(cameraForward)
+
+    // Get device orientation for level indicator
+    const up = new Vector3(0, 1, 0)
+    up.applyQuaternion(camera.quaternion)
+    setDeviceOrientation({
+      pitch: Math.asin(Math.max(-1, Math.min(1, up.y))) * (180 / Math.PI),
+      roll: Math.atan2(up.x, up.z) * (180 / Math.PI)
+    })
 
     // Find nearest uncaptured target point
     let nearestPoint = null
@@ -48,10 +58,14 @@ function Scene({
     })
 
     // Check if aligned with target
-    if (nearestPoint && nearestDistance < (CAPTURE_THRESHOLD * Math.PI / 180)) {
+    const isAligned = nearestPoint && nearestDistance < (CAPTURE_THRESHOLD * Math.PI / 180)
+    let canCapture = false
+    let isReady = false
+
+    if (isAligned) {
       // Check overlap constraints with nearest captured point
       // First capture is always allowed
-      let canCapture = capturedPoints.length === 0
+      canCapture = capturedPoints.length === 0
       
       if (capturedPoints.length > 0) {
         // Find nearest captured point to check overlap
@@ -77,22 +91,44 @@ function Scene({
           if (!stabilityTimerRef.current) {
             stabilityTimerRef.current = now
           } else if (now - stabilityTimerRef.current >= STABILITY_DURATION) {
+            isReady = true
             // Trigger capture
             onCapture(nearestIndex, nearestPoint, cameraForward)
             stabilityTimerRef.current = null
             lastAlignmentRef.current = null
+          } else {
+            isReady = true // Aligned and counting down
           }
         } else {
           lastAlignmentRef.current = nearestIndex
           stabilityTimerRef.current = now
         }
-      } else {
-        stabilityTimerRef.current = null
-        lastAlignmentRef.current = null
       }
     } else {
       stabilityTimerRef.current = null
       lastAlignmentRef.current = null
+    }
+
+    // Update reticle state
+    setReticleState({
+      isAligned,
+      canCapture,
+      isReady,
+      distance: nearestDistance * (180 / Math.PI) // Convert to degrees
+    })
+
+    // Update reticle color based on state
+    if (reticleRef.current && reticleRef.current.material) {
+      if (isReady && canCapture) {
+        reticleRef.current.material.color.setHex(0x00ff00) // Green when ready
+        reticleRef.current.material.opacity = 1.0
+      } else if (isAligned && canCapture) {
+        reticleRef.current.material.color.setHex(0x00ff00) // Green when aligned
+        reticleRef.current.material.opacity = 0.6
+      } else {
+        reticleRef.current.material.color.setHex(0xffffff) // White when not aligned
+        reticleRef.current.material.opacity = 0.4
+      }
     }
   })
 
@@ -102,7 +138,7 @@ function Scene({
       
       {/* Reticle at screen center */}
       <Circle ref={reticleRef} args={[0.02, 32]} position={[0, 0, -0.5]}>
-        <meshBasicMaterial color="#00ff00" transparent opacity={0.8} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.4} />
       </Circle>
 
       {/* Target points */}
@@ -134,6 +170,8 @@ export default function CaptureView({ onComplete, onImagesCaptured }) {
   const [capturedPoints, setCapturedPoints] = useState([])
   const [cameraForward, setCameraForward] = useState(new Vector3(0, 0, -1))
   const [captureCount, setCaptureCount] = useState(0)
+  const [reticleState, setReticleState] = useState({ isAligned: false, canCapture: false, isReady: false, distance: 0 })
+  const [deviceOrientation, setDeviceOrientation] = useState({ pitch: 0, roll: 0 })
 
   // Generate sphere points
   // 6 axis endpoints (±x, ±y, ±z) + 14 evenly distributed points between axes = 20 total
@@ -253,6 +291,8 @@ export default function CaptureView({ onComplete, onImagesCaptured }) {
             onCapture={captureImage}
             videoRef={videoRef}
             setCameraForward={setCameraForward}
+            setReticleState={setReticleState}
+            setDeviceOrientation={setDeviceOrientation}
           />
         </Canvas>
       </div>
@@ -264,10 +304,65 @@ export default function CaptureView({ onComplete, onImagesCaptured }) {
         cameraFOV={CAMERA_FOV}
       />
 
+      {/* Level Indicator */}
+      <div className="level-indicator">
+        <div className="level-bubble">
+          <div 
+            className="level-dot"
+            style={{
+              transform: `translate(${deviceOrientation.roll * 2}px, ${deviceOrientation.pitch * 2}px)`
+            }}
+          />
+        </div>
+        <div className="level-labels">
+          <span className="level-label">Level</span>
+        </div>
+      </div>
+
+      {/* Circular Progress Indicator */}
+      <div className="circular-progress">
+        <svg className="progress-ring" viewBox="0 0 100 100">
+          <circle
+            className="progress-ring-background"
+            cx="50"
+            cy="50"
+            r="45"
+            fill="none"
+            stroke="rgba(255, 255, 255, 0.2)"
+            strokeWidth="4"
+          />
+          <circle
+            className="progress-ring-fill"
+            cx="50"
+            cy="50"
+            r="45"
+            fill="none"
+            stroke="#00ff00"
+            strokeWidth="4"
+            strokeDasharray={`${2 * Math.PI * 45}`}
+            strokeDashoffset={`${2 * Math.PI * 45 * (1 - captureCount / targetPoints.length)}`}
+            transform="rotate(-90 50 50)"
+          />
+        </svg>
+        <div className="progress-text">
+          <span className="progress-count">{captureCount}</span>
+          <span className="progress-total">/ {targetPoints.length}</span>
+        </div>
+      </div>
+
       {/* UI overlay */}
       <div className="capture-ui">
         <div className="capture-stats">
           <span className="capture-count">{captureCount} / {targetPoints.length}</span>
+          {reticleState.isAligned && (
+            <div className="alignment-status">
+              {reticleState.isReady ? (
+                <span className="status-ready">Ready to capture!</span>
+              ) : (
+                <span className="status-aligning">Aligning... {reticleState.distance.toFixed(1)}°</span>
+              )}
+            </div>
+          )}
         </div>
         {capturedPoints.length > 0 && (
           <button 

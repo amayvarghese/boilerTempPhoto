@@ -1,58 +1,111 @@
 import { Vector3 } from 'three'
 
 /**
- * Generate points on a sphere with equal angular spacing
- * Uses spherical coordinates with uniform theta (elevation) and phi (azimuth) spacing
- * Ensures consistent angular distance between capture points for optimal overlap
+ * Generate points on a sphere with axis endpoints and evenly distributed points between axes
+ * - Places minimal points at axis endpoints (±x, ±y, ±z) = 6 points
+ * - Distributes remaining points evenly between axes at equal angular distances
+ * - Uses octahedral structure: axis endpoints + points on edges and faces
  */
 export function generateFibonacciSpherePoints(count = 50) {
   const points = []
   
-  // Calculate optimal number of elevation bands
-  // For better distribution, find factors that work well
-  let numBands = Math.round(Math.sqrt(count))
+  // Step 1: Add 6 axis endpoint points (±x, ±y, ±z)
+  const axisPoints = [
+    new Vector3(1, 0, 0),   // +x
+    new Vector3(-1, 0, 0),   // -x
+    new Vector3(0, 1, 0),   // +y (up)
+    new Vector3(0, -1, 0),  // -y (down)
+    new Vector3(0, 0, 1),   // +z (forward)
+    new Vector3(0, 0, -1),  // -z (backward)
+  ]
   
-  // Adjust to ensure we can distribute points evenly
-  // Try to find a good balance between bands and points per band
-  let pointsPerBand = Math.ceil(count / numBands)
-  
-  // Refine to get closer to the target count
-  while (numBands * pointsPerBand > count * 1.2 && numBands > 1) {
-    numBands--
-    pointsPerBand = Math.ceil(count / numBands)
+  // If count is 6 or less, just return axis points
+  if (count <= 6) {
+    return axisPoints.slice(0, count)
   }
+  
+  // Add axis endpoints
+  points.push(...axisPoints)
+  
+  // Step 2: Calculate remaining points to distribute between axes
+  const remainingCount = count - 6
+  
+  if (remainingCount <= 0) {
+    return points
+  }
+  
+  // Generate points between axes using octahedral structure
+  // We'll create points on the 12 edges (between 2 axes) and 8 faces (between 3 axes)
+  
+  // Calculate how many intermediate points per edge/face
+  // For equal angular spacing, we need to distribute points evenly
+  
+  // Number of intermediate levels between center and axis endpoints
+  const numLevels = Math.ceil(Math.sqrt(remainingCount / 8))
   
   let pointIndex = 0
   
-  for (let band = 0; band < numBands && pointIndex < count; band++) {
-    // Elevation angle (theta): from -90° (bottom) to +90° (top)
-    // Distribute evenly, avoiding exact poles
-    const theta = (Math.PI / 2) * (1 - (2 * band + 1) / (numBands + 1))
+  // Generate points at different levels between axes
+  for (let level = 1; level <= numLevels && pointIndex < remainingCount; level++) {
+    const t = level / (numLevels + 1) // Distance from center (0 to 1)
     
-    // Calculate how many points should be in this band
-    const remainingPoints = count - pointIndex
-    const remainingBands = numBands - band
-    const pointsInThisBand = Math.min(
-      Math.ceil(remainingPoints / remainingBands),
-      pointsPerBand,
-      remainingPoints
+    // Generate all combinations of ±1 for x, y, z (excluding pure axes)
+    // This creates points on edges (2 non-zero) and faces (3 non-zero)
+    const combinations = []
+    
+    // Points on edges (between 2 axes) - 12 edges total
+    const edgeSigns = [
+      [1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0],  // xy plane
+      [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],  // xz plane
+      [0, 1, 1], [0, 1, -1], [0, -1, 1], [0, -1, -1],  // yz plane
+    ]
+    
+    // Points on faces (between 3 axes) - 8 octants
+    const faceSigns = [
+      [1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1],
+      [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1],
+    ]
+    
+    // Combine edges and faces
+    const allCombinations = [...edgeSigns, ...faceSigns]
+    
+    // Calculate how many points to add at this level
+    const pointsAtThisLevel = Math.min(
+      Math.ceil(remainingCount / numLevels),
+      remainingCount - pointIndex
     )
     
-    // Azimuth spacing: equal angular spacing around the circle
-    const azimuthStep = (2 * Math.PI) / pointsInThisBand
+    // Distribute points evenly across combinations
+    const step = Math.max(1, Math.floor(allCombinations.length / pointsAtThisLevel))
     
-    for (let i = 0; i < pointsInThisBand && pointIndex < count; i++) {
-      // Azimuth angle (phi): evenly spaced around the circle
-      const phi = azimuthStep * i
+    for (let i = 0; i < allCombinations.length && pointIndex < remainingCount; i += step) {
+      const [sx, sy, sz] = allCombinations[i]
       
-      // Convert spherical to Cartesian coordinates
-      // In Three.js: x=right, y=up, z=forward
-      const x = Math.sin(theta) * Math.cos(phi)
-      const y = Math.cos(theta) // y is up in Three.js
-      const z = Math.sin(theta) * Math.sin(phi)
+      // Create point at distance t from center along this direction, then normalize
+      const x = sx * t
+      const y = sy * t
+      const z = sz * t
+      
+      const vec = new Vector3(x, y, z).normalize()
+      points.push(vec)
+      pointIndex++
+    }
+  }
+  
+  // Fill remaining points with evenly distributed spherical coordinates
+  if (pointIndex < remainingCount) {
+    const additionalNeeded = remainingCount - pointIndex
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5))
+    
+    for (let i = 0; i < additionalNeeded; i++) {
+      const y = 1 - (i / (additionalNeeded - 1)) * 2
+      const radius = Math.sqrt(Math.max(0, 1 - y * y))
+      const theta = goldenAngle * i
+      
+      const x = Math.cos(theta) * radius
+      const z = Math.sin(theta) * radius
       
       points.push(new Vector3(x, y, z))
-      pointIndex++
     }
   }
   

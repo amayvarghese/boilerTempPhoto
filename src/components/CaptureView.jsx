@@ -136,8 +136,9 @@ export default function CaptureView({ onComplete, onImagesCaptured }) {
   const [captureCount, setCaptureCount] = useState(0)
 
   // Generate sphere points
+  // 6 axis endpoints (±x, ±y, ±z) + 14 evenly distributed points between axes = 20 total
   useEffect(() => {
-    const points = generateFibonacciSpherePoints(24)
+    const points = generateFibonacciSpherePoints(20)
     setTargetPoints(points)
   }, [])
 

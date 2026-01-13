@@ -1,24 +1,61 @@
 import { Vector3 } from 'three'
 
 /**
- * Generate points on a sphere using Fibonacci sphere algorithm
- * Ensures even distribution across the sphere surface
+ * Generate points on a sphere with equal angular spacing
+ * Uses spherical coordinates with uniform theta (elevation) and phi (azimuth) spacing
+ * Ensures consistent angular distance between capture points for optimal overlap
  */
 export function generateFibonacciSpherePoints(count = 50) {
   const points = []
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5)) // Golden angle in radians
-
-  for (let i = 0; i < count; i++) {
-    const y = 1 - (i / (count - 1)) * 2 // y goes from 1 to -1
-    const radius = Math.sqrt(1 - y * y) // radius at y
-    const theta = goldenAngle * i // golden angle increment
-
-    const x = Math.cos(theta) * radius
-    const z = Math.sin(theta) * radius
-
-    points.push(new Vector3(x, y, z))
+  
+  // Calculate optimal number of elevation bands
+  // For better distribution, find factors that work well
+  let numBands = Math.round(Math.sqrt(count))
+  
+  // Adjust to ensure we can distribute points evenly
+  // Try to find a good balance between bands and points per band
+  let pointsPerBand = Math.ceil(count / numBands)
+  
+  // Refine to get closer to the target count
+  while (numBands * pointsPerBand > count * 1.2 && numBands > 1) {
+    numBands--
+    pointsPerBand = Math.ceil(count / numBands)
   }
-
+  
+  let pointIndex = 0
+  
+  for (let band = 0; band < numBands && pointIndex < count; band++) {
+    // Elevation angle (theta): from -90° (bottom) to +90° (top)
+    // Distribute evenly, avoiding exact poles
+    const theta = (Math.PI / 2) * (1 - (2 * band + 1) / (numBands + 1))
+    
+    // Calculate how many points should be in this band
+    const remainingPoints = count - pointIndex
+    const remainingBands = numBands - band
+    const pointsInThisBand = Math.min(
+      Math.ceil(remainingPoints / remainingBands),
+      pointsPerBand,
+      remainingPoints
+    )
+    
+    // Azimuth spacing: equal angular spacing around the circle
+    const azimuthStep = (2 * Math.PI) / pointsInThisBand
+    
+    for (let i = 0; i < pointsInThisBand && pointIndex < count; i++) {
+      // Azimuth angle (phi): evenly spaced around the circle
+      const phi = azimuthStep * i
+      
+      // Convert spherical to Cartesian coordinates
+      // In Three.js: x=right, y=up, z=forward
+      const x = Math.sin(theta) * Math.cos(phi)
+      const y = Math.cos(theta) // y is up in Three.js
+      const z = Math.sin(theta) * Math.sin(phi)
+      
+      points.push(new Vector3(x, y, z))
+      pointIndex++
+    }
+  }
+  
   return points
 }
 

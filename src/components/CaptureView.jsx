@@ -137,7 +137,7 @@ export default function CaptureView({ onComplete, onImagesCaptured }) {
 
   // Generate sphere points
   useEffect(() => {
-    const points = generateFibonacciSpherePoints(12)
+    const points = generateFibonacciSpherePoints(24)
     setTargetPoints(points)
   }, [])
 

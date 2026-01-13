@@ -7,8 +7,8 @@ import CoverageOverlay from './CoverageOverlay'
 import './CaptureView.css'
 
 const CAMERA_FOV = 65 // degrees
-const CAPTURE_THRESHOLD = 2 // degrees alignment threshold
-const STABILITY_DURATION = 500 // milliseconds
+const CAPTURE_THRESHOLD = 3 // degrees alignment threshold
+const STABILITY_DURATION = 300 // milliseconds
 
 function Scene({ 
   targetPoints, 
@@ -64,8 +64,9 @@ function Scene({
         // Calculate overlap with nearest capture
         const overlap = calculateOverlap(CAMERA_FOV, nearestCapturedDistance)
         
-        // Only allow capture if overlap is within 30-40% range
-        canCapture = overlap >= 30 && overlap <= 40
+        // Allow capture if overlap is reasonable (20-50% range, more lenient for auto-capture)
+        // Also allow if no overlap but reasonable distance (to ensure we can capture all 12 points)
+        canCapture = (overlap >= 20 && overlap <= 50) || (nearestCapturedDistance > 0.3 && nearestCapturedDistance < 1.5)
       }
 
       if (canCapture) {
@@ -136,7 +137,7 @@ export default function CaptureView({ onComplete, onImagesCaptured }) {
 
   // Generate sphere points
   useEffect(() => {
-    const points = generateFibonacciSpherePoints(50)
+    const points = generateFibonacciSpherePoints(12)
     setTargetPoints(points)
   }, [])
 
@@ -267,13 +268,14 @@ export default function CaptureView({ onComplete, onImagesCaptured }) {
         <div className="capture-stats">
           <span className="capture-count">{captureCount} / {targetPoints.length}</span>
         </div>
-        <button 
-          onClick={handleComplete}
-          className="complete-button"
-          disabled={capturedPoints.length === 0}
-        >
-          View Gallery
-        </button>
+        {capturedPoints.length > 0 && (
+          <button 
+            onClick={handleComplete}
+            className="complete-button"
+          >
+            Proceed with {captureCount} Image{captureCount !== 1 ? 's' : ''}
+          </button>
+        )}
       </div>
     </div>
   )
